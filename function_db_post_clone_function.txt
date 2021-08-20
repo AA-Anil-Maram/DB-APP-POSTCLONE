@@ -1,0 +1,44 @@
+#function takes 3 arguments $1 apps user password, $2 script location , $3 log location 
+function_db_post_clone()
+{
+        local sql_user_pass="apps/"$1
+        local script_loc=$2
+        local log_loc=$3
+        if [ ! -d ${script_loc} ] && [ ! -d ${log_loc} ];then
+                echo " invalid log or script location,exiting.. "
+                exit 1
+        else
+                if [ ! -z ${ORACLE_HOME} ];then
+                if [ ! -f "${log_loc}/DB_Postclone_`date +%d%b%Y_%T`.log" ];then
+                        local log_file="${log_loc}/DB_Postclone_`date +%d%b%Y_%T`.log"
+                        touch $log_file
+                fi
+                sqlplus -s /nolog <<EOF    >>  $log_file
+                whenever sqlerror exit failure
+                connect $sql_user_pass
+				@${script_loc}/fnd_node_cleanup.sql
+				@${script_loc}/disable_oracle_alert.sql
+				@${script_loc}/prevent_sending_wf_mails.sql
+				@${script_loc}/fix_URL_notification_mail.sql
+				@${script_loc}/signon_profile_password_security.sql
+				@${script_loc}/recreate_dblink.sql
+				disconnect 
+				connect / as sysdba
+				@${script_loc}/dba_dirs.sql
+				@${script_loc}/grant_dba_dir.sql
+				@${script_loc}/Change_default_db_profile.sql
+				@${script_loc}/lock_unused_schemas.sql
+				@${script_loc}/compile_invalids.sql
+				@${script_loc}/change_passwords.sql
+				@${ORACLE_HOME}/appsutil/admin/adgrants.sql
+EOF
+				
+                else
+                echo "db env not sourced ,exiting .."
+                exit 1
+                fi
+fi
+if [ `grep -i connect  $log_file | wc -l` -gt 0 ];then
+        echo "post clone step completed successfully" >> $log_file
+fi
+}
